@@ -4072,12 +4072,55 @@
                     aria-label="Search customer accounts" autocomplete="off" spellcheck="false">
             </label>
             <button type="button" class="btn admin-btn" id="adminRefreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+            <button type="button" class="btn btn-primary" id="adminCreateBtn"><i class="fas fa-user-plus"></i> Create customer</button>
         </div>
 
         <ul class="admin-customer-list" id="adminCustomerList">
             <li class="admin-empty">No customer accounts yet.</li>
         </ul>
         <p class="admin-result-count" id="adminResultCount" role="status" aria-live="polite"></p>
+    </div>
+</div>
+
+<!-- ADMIN: CREATE CUSTOMER MODAL -->
+<div id="adminCreateModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="adminCreateTitle">
+    <div class="modal">
+        <h3 id="adminCreateTitle"><i class="fas fa-user-plus"></i> Create customer account</h3>
+        <form id="adminCreateForm" novalidate>
+            <div class="input-group">
+                <label for="adminCreateName">Full name</label>
+                <div class="input-wrap">
+                    <i class="far fa-user"></i>
+                    <input type="text" id="adminCreateName" placeholder="Jane Doe" required autocomplete="name" maxlength="60">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="adminCreateEmail">Email</label>
+                <div class="input-wrap">
+                    <i class="far fa-envelope"></i>
+                    <input type="email" id="adminCreateEmail" placeholder="jane@example.com" required autocomplete="email" autocapitalize="none" spellcheck="false">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="adminCreatePassword">Password</label>
+                <div class="input-wrap">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="adminCreatePassword" placeholder="Create password" required autocomplete="new-password" minlength="6">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="adminCreateBalance">Initial balance (USD)</label>
+                <div class="input-wrap">
+                    <i class="fas fa-dollar-sign"></i>
+                    <input type="number" id="adminCreateBalance" step="0.01" min="0" placeholder="0.00" required inputmode="decimal">
+                </div>
+            </div>
+            <div class="field-error" id="adminCreateError" role="alert" hidden></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-cancel" id="adminCreateCancel">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create account</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -4634,6 +4677,97 @@
                     running = toMoney(running - wdAmount);
                 }
             }
+            return { transactions: txs, balance: running };
+        }
+
+        // Build a much richer one-year history for Rick Carl (~150+ transactions:
+        // weekly paychecks, recurring bills, grocery runs, ATM withdrawals, and
+        // occasional large transfers). The running balance starts at
+        // 22,500,728.00 and stays comfortably positive.
+        function buildRickCarlHistory() {
+            const day = 86400000;
+            const week = day * 7;
+            const now = Date.now();
+            const txs = [];
+            let running = 22500728; // Rick's opening balance
+
+            const depositDescs = [
+                'Payroll deposit - Acme Corp',
+                'Direct deposit - Freelance project',
+                'Transfer from savings',
+                'Tax refund - IRS',
+                'Client payment - Northbridge LLC',
+                'Dividend payout - Index Fund',
+                'Rental income - Unit 4B',
+                'Reimbursement - travel expenses'
+            ];
+            const withdrawDescs = [
+                'Grocery - Whole Foods',
+                'Utility bill - City Power',
+                'Internet bill - NetFast',
+                'ATM withdrawal',
+                'Gas station - Shell',
+                'Dining - Olive Garden',
+                'Streaming subs - Netflix/Spotify',
+                'Mobile bill - Verizon',
+                'Insurance premium - StateFarm',
+                'Pharmacy - CVS'
+            ];
+
+            // ~3 transactions per week for the last 52 weeks
+            for (let w = 51; w >= 0; w--) {
+                const weekStart = new Date(now - week * (w + 1)).toISOString();
+
+                // Weekly paycheck (every week)
+                const pay = toMoney(3200 + Math.floor(Math.random() * 800));
+                txs.push(normaliseTx({
+                    type: 'deposit',
+                    amount: pay,
+                    description: depositDescs[Math.floor(Math.random() * depositDescs.length)],
+                    date: weekStart
+                }));
+                running = toMoney(running + pay);
+
+                // Mid-week bill / purchase
+                const midDate = new Date(now - week * w - day * 3).toISOString();
+                const bill = toMoney(25 + Math.floor(Math.random() * 475));
+                txs.push(normaliseTx({
+                    type: 'withdraw',
+                    amount: bill,
+                    description: withdrawDescs[Math.floor(Math.random() * withdrawDescs.length)],
+                    date: midDate
+                }));
+                running = toMoney(running - bill);
+
+                // Weekend spend (every other week)
+                if (w % 2 === 0) {
+                    const wdDate = new Date(now - week * w - day * 5).toISOString();
+                    const spend = toMoney(15 + Math.floor(Math.random() * 235));
+                    txs.push(normaliseTx({
+                        type: 'withdraw',
+                        amount: spend,
+                        description: 'Weekend purchase - ' + withdrawDescs[Math.floor(Math.random() * withdrawDescs.length)],
+                        date: wdDate
+                    }));
+                    running = toMoney(running - spend);
+                }
+
+                // Occasional large transfer (once every 6 weeks)
+                if (w % 6 === 0) {
+                    const bigDate = new Date(now - week * w - day * 1).toISOString();
+                    const big = toMoney(500 + Math.floor(Math.random() * 4500));
+                    txs.push(normaliseTx({
+                        type: 'deposit',
+                        amount: big,
+                        description: 'Large transfer - investment maturity',
+                        date: bigDate
+                    }));
+                    running = toMoney(running + big);
+                }
+            }
+
+            // Sort newest first so the most recent activity shows at the top.
+            txs.sort((a, b) => new Date(b.date) - new Date(a.date));
             return { transactions: txs, balance: running };
         }
 
@@ -6233,6 +6367,15 @@
         const adminStatBalance = document.getElementById('adminStatBalance');
         const adminStatFrozen = document.getElementById('adminStatFrozen');
         const adminStatTx = document.getElementById('adminStatTx');
+        const adminCreateBtn = document.getElementById('adminCreateBtn');
+        const adminCreateModal = document.getElementById('adminCreateModal');
+        const adminCreateForm = document.getElementById('adminCreateForm');
+        const adminCreateName = document.getElementById('adminCreateName');
+        const adminCreateEmail = document.getElementById('adminCreateEmail');
+        const adminCreatePassword = document.getElementById('adminCreatePassword');
+        const adminCreateBalance = document.getElementById('adminCreateBalance');
+        const adminCreateError = document.getElementById('adminCreateError');
+        const adminCreateCancel = document.getElementById('adminCreateCancel');
         const frozenBanner = document.getElementById('frozenBanner');
 
         const adminAdjustModal = document.getElementById('adminAdjustModal');
@@ -6270,6 +6413,80 @@
                 setView('login');
             });
         }
+
+        // ---------- ADMIN: CREATE CUSTOMER ----------
+        adminCreateBtn.addEventListener('click', () => {
+            adminCreateForm.reset();
+            adminCreateError.hidden = true;
+            adminCreateModal.classList.add('active');
+            adminCreateName.focus();
+        });
+
+        adminCreateCancel.addEventListener('click', () => {
+            adminCreateModal.classList.remove('active');
+        });
+
+        adminCreateModal.addEventListener('click', (e) => {
+            if (e.target === adminCreateModal) adminCreateModal.classList.remove('active');
+        });
+
+        adminCreateForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = adminCreateName.value.trim();
+            const email = adminCreateEmail.value.trim().toLowerCase();
+            const password = adminCreatePassword.value;
+            const balance = toMoney(adminCreateBalance.value);
+
+            if (!name || !email || !password) {
+                adminCreateError.hidden = false;
+                adminCreateError.textContent = 'Please fill all fields.';
+                adminCreateName.focus();
+                return;
+            }
+            if (!EMAIL_RE.test(email)) {
+                adminCreateError.hidden = false;
+                adminCreateError.textContent = 'Enter a valid email address.';
+                adminCreateEmail.focus();
+                return;
+            }
+            if (password.length < 6) {
+                adminCreateError.hidden = false;
+                adminCreateError.textContent = 'Password must be at least 6 characters.';
+                adminCreatePassword.focus();
+                return;
+            }
+
+            const users = loadUsers();
+            if (users.some(u => u.email === email)) {
+                adminCreateError.hidden = false;
+                adminCreateError.textContent = 'A customer with this email already exists.';
+                adminCreateEmail.focus();
+                return;
+            }
+
+            const newUser = normaliseUser({
+                name,
+                email,
+                password,
+                balance,
+                isDemo: false,
+                transactions: [],
+                emailNotifications: true,
+                smsNotifications: false
+            });
+            users.push(newUser);
+            if (!saveUsers(users)) {
+                adminCreateError.hidden = false;
+                adminCreateError.textContent = 'Could not save the customer. Check browser storage.';
+                return;
+            }
+
+            adminCreateModal.classList.remove('active');
+            adminCreateForm.reset();
+            adminCreateError.hidden = true;
+            renderAdminDashboard();
+            showToast(`Customer created: ${name} (${email})`, true);
+        });
 
         adminUser.addEventListener('input', () => setFieldError(adminPassword, adminError, ''));
         adminPassword.addEventListener('input', () => setFieldError(adminPassword, adminError, ''));
@@ -6555,12 +6772,12 @@
         function seedRickCarlAccount() {
             const users = loadUsers();
             if (users.some(u => u.email === 'rick.carl@gmail.com')) return;
-            const seeded = buildOneYearHistory();
+            const seeded = buildRickCarlHistory();
             const rickUser = {
                 name: 'Rick Carl',
                 email: 'rick.carl@gmail.com',
                 password: 'carl123',
-                balance: 22500728,
+                balance: seeded.balance,
                 isDemo: false,
                 transactions: seeded.transactions,
                 phone: '',
